@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pencatatan Utilitas Mall 23</title>
+    <!-- Library Tanda Tangan Resmi -->
     <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 15px; }
@@ -11,10 +12,13 @@
         h2 { text-align: center; color: #333; font-size: 1.2rem; line-height: 1.4; margin-top: 5px; }
         label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px; color: #555; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
-        .canvas-container { border: 2px dashed #999; background: #f9f9f9; border-radius: 4px; position: relative; margin-top: 5px; }
-        canvas { width: 100%; height: 130px; display: block; }
-        .clear-btn { background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-top: 5px; float: right; font-size: 0.8rem; }
-        button[type="submit"] { width: 100%; background: #2ecc71; color: white; border: none; padding: 12px; font-size: 1.1rem; border-radius: 4px; cursor: pointer; margin-top: 25px; font-weight: bold; }
+        
+        /* PERBAIKAN: Memaksa area tanda tangan memiliki ukuran tetap dan mematikan scroll layar saat digores */
+        .canvas-container { border: 2px dashed #999; background: #f9f9f9; border-radius: 4px; position: relative; margin-top: 5px; height: 150px; width: 100%; box-sizing: border-box; }
+        canvas { width: 100% !important; height: 150px !important; display: block; touch-action: none; cursor: crosshair; }
+        
+        .clear-btn { background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-top: 5px; float: right; font-size: 0.8rem; font-weight: bold; }
+        button[type="submit"] { width: 100%; background: #2ecc71; color: white; border: none; padding: 14px; font-size: 1.1rem; border-radius: 4px; cursor: pointer; margin-top: 25px; font-weight: bold; }
         .status-sync { text-align: center; font-weight: bold; color: #e67e22; margin-top: 10px; font-size: 0.9rem; }
     </style>
 </head>
@@ -63,14 +67,14 @@
         <label>Tanda Tangan Petugas</label>
         <div class="canvas-container">
             <canvas id="canvasPetugas"></canvas>
-            <button type="button" class="clear-btn" onclick="padPetugas.clear()">Hapus</button>
+            <button type="button" class="clear-btn" id="clearPetugasBtn">Hapus</button>
         </div>
         <div style="clear: both;"></div>
 
         <label>Tanda Tangan Tenant</label>
         <div class="canvas-container">
             <canvas id="canvasTenant"></canvas>
-            <button type="button" class="clear-btn" onclick="padTenant.clear()">Hapus</button>
+            <button type="button" class="clear-btn" id="clearTenantBtn">Hapus</button>
         </div>
         <div style="clear: both;"></div>
 
@@ -79,26 +83,36 @@
 </div>
 
 <script>
+    // Link Jembatan Google Sheets Anda
     const WEB_APP_URL = "https://google.com";
 
     const canvasP = document.getElementById('canvasPetugas');
     const canvasT = document.getElementById('canvasTenant');
-    const padPetugas = new SignaturePad(canvasP);
-    const padTenant = new SignaturePad(canvasT);
+    
+    // Inisialisasi Signature Pad Resmi
+    const padPetugas = new SignaturePad(canvasP, { backgroundColor: 'rgb(249, 249, 249)' });
+    const padTenant = new SignaturePad(canvasT, { backgroundColor: 'rgb(249, 249, 249)' });
 
+    // PERBAIKAN: Fungsi penyesuaian resolusi tanda tangan agar tidak macet / freeze
     function resizeCanvas() {
         [canvasP, canvasT].forEach(canvas => {
-            const ratio = Math.max(window.devicePixelRatio || 1, 1);
-            canvas.width = canvas.offsetWidth * ratio;
-            canvas.height = 130 * ratio;
-            canvas.getContext("2d").scale(ratio, ratio);
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = 150;
+            canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
         });
-        padPetugas.clear(); padTenant.clear();
+        padPetugas.clear(); 
+        padTenant.clear();
     }
     
     window.addEventListener("resize", resizeCanvas);
     window.addEventListener("DOMContentLoaded", resizeCanvas);
 
+    // Tombol Hapus Tanda Tangan
+    document.getElementById('clearPetugasBtn').addEventListener('click', function() { padPetugas.clear(); });
+    document.getElementById('clearTenantBtn').addEventListener('click', function() { padTenant.clear(); });
+
+    // Fungsi konversi file foto ke string teks (Base64)
     function fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -108,6 +122,7 @@
         });
     }
 
+    // Prosedur Kirim Data ke Google Sheet
     async function sendDataToGoogle(data) {
         return fetch(WEB_APP_URL, {
             method: "POST",
@@ -117,6 +132,7 @@
         });
     }
 
+    // Sinkronisasi Offline Otomatis
     async function syncOfflineData() {
         let offlineData = JSON.parse(localStorage.getItem("offline_utility_data")) || [];
         if (offlineData.length === 0) {
@@ -149,6 +165,7 @@
     window.addEventListener('online', syncOfflineData);
     setInterval(syncOfflineData, 15000);
 
+    // Event kirim formulir
     document.getElementById("utilityForm").addEventListener("submit", async function(e) {
         e.preventDefault();
 
@@ -160,7 +177,7 @@
         const fileInput = document.getElementById("fotoMeter").files;
         let fotoBase64 = "";
         if (fileInput.length > 0) {
-            fotoBase64 = await fileToBase64(fileInput[0]);
+            fotoBase64 = await fileToBase64(fileInput);
         }
 
         const formData = {
