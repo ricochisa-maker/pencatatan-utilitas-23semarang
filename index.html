@@ -10,13 +10,11 @@
         h2 { text-align: center; color: #333; font-size: 1.2rem; line-height: 1.4; margin-top: 5px; }
         label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px; color: #555; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
-        
-        /* Box Tanda Tangan Fix Tanpa Plugin Eksternal */
         .canvas-container { border: 2px dashed #999; background: #ffffff; border-radius: 4px; position: relative; margin-top: 5px; height: 150px; width: 100%; touch-action: none; }
         canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
-        
         .clear-btn { background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-top: 5px; float: right; font-size: 0.8rem; font-weight: bold; }
         button[type="submit"] { width: 100%; background: #2ecc71; color: white; border: none; padding: 14px; font-size: 1.1rem; border-radius: 4px; cursor: pointer; margin-top: 25px; font-weight: bold; }
+        button[type="submit"]:disabled { background: #95a5a6; cursor: not-allowed; }
         .status-sync { text-align: center; font-weight: bold; color: #e67e22; margin-top: 10px; font-size: 0.9rem; }
     </style>
 </head>
@@ -76,14 +74,14 @@
         </div>
         <div style="clear: both;"></div>
 
-        <button type="submit">KIRIM DATA</button>
+        <button type="submit" id="submitBtn">KIRIM DATA</button>
     </form>
 </div>
 
 <script>
     const WEB_APP_URL = "https://google.com";
 
-    // Setup Sistem Gambar Tanda Tangan Manual (Anti-Macet)
+    // Setup Kanvas Tanda Tangan
     function setupSignature(canvasId, clearId) {
         const canvas = document.getElementById(canvasId);
         const ctx = canvas.getContext('2d');
@@ -99,11 +97,10 @@
         window.addEventListener('resize', resize);
         setTimeout(resize, 300);
 
-        // Fungsi Deteksi Koordinat Sentuhan
         function getPos(e) {
             const rect = canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const clientX = e.touches ? e.touches.clientX : e.clientX;
+            const clientY = e.touches ? e.touches.clientY : e.clientY;
             return { x: clientX - rect.left, y: clientY - rect.top };
         }
 
@@ -114,7 +111,6 @@
         canvas.addEventListener('mousedown', startDraw);
         canvas.addEventListener('mousemove', draw);
         window.addEventListener('mouseup', stopDraw);
-
         canvas.addEventListener('touchstart', startDraw, {passive: false});
         canvas.addEventListener('touchmove', draw, {passive: false});
         window.addEventListener('touchend', stopDraw);
@@ -129,17 +125,42 @@
     const canvasP = setupSignature('canvasPetugas', 'clearPetugas');
     const canvasT = setupSignature('canvasTenant', 'clearTenant');
 
-    function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
+    // SOLUSI: Mengompres foto otomatis agar pengiriman data super cepat ringan
+    function compressImage(file) {
+        return new Promise((resolve) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = error => reject(error);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Batasi resolusi maksimal lebar/tinggi di 1024 pixel (Sangat jernih untuk angka meteran)
+                    const MAX_WIDTH = 1024;
+                    const MAX_HEIGHT = 1024;
+                    if (width > height) {
+                        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                    } else {
+                        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Kompres kualitas gambar ke 70% (.jpeg ringan)
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    resolve(dataUrl);
+                };
+            };
         });
     }
 
     async function submitForm(formData) {
-        // Menggunakan fetch standar untuk mengirim data ke Google Sheets
         return fetch(WEB_APP_URL, {
             method: "POST",
             mode: "no-cors",
@@ -151,11 +172,20 @@
     document.getElementById("utilityForm").addEventListener("submit", async function(e) {
         e.preventDefault();
 
+        const submitBtn = document.getElementById("submitBtn");
+        const syncStatus = document.getElementById("syncStatus");
+
         const fileInput = document.getElementById("fotoMeter").files;
-        let fotoBase64 = "";
-        if (fileInput.length > 0) {
-            fotoBase64 = await fileToBase64(fileInput[0]);
+        if (fileInput.length === 0) {
+            alert("Foto meteran wajib diisi!");
+            return;
         }
+
+        // Kunci tombol kirim agar tidak ditekan berulang-ulang
+        submitBtn.disabled = true;
+        syncStatus.innerText = "Sedang memproses & mengompres foto...";
+
+        let fotoBase64 = await compressImage(fileInput[0]);
 
         const formData = {
             tanggal: document.getElementById("tanggal").value.replace("T", " "),
@@ -171,16 +201,17 @@
         };
 
         try {
-            document.getElementById("syncStatus").innerText = "Sedang mengirim data, mohon tunggu...";
+            syncStatus.innerText = "Mengirim data ke Spreadsheet, mohon tunggu...";
             await submitForm(formData);
-            alert("Data BERHASIL terkirim ke Master Data Spreadsheet!");
+            alert("Data BERHASIL terkirim dalam beberapa detik!");
             document.getElementById("utilityForm").reset();
             document.getElementById("clearPetugas").click();
             document.getElementById("clearTenant").click();
-            document.getElementById("syncStatus").innerText = "";
         } catch (error) {
-            alert("Terjadi gangguan koneksi. Data gagal terkirim.");
-            document.getElementById("syncStatus").innerText = "";
+            alert("Gagal mengirim data. Coba cek koneksi internet Anda.");
+        } finally {
+            submitBtn.disabled = false;
+            syncStatus.innerText = "";
         }
     });
 </script>
