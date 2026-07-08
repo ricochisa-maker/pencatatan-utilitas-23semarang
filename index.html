@@ -2,20 +2,18 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pencatatan Utilitas Mall 23</title>
-    <!-- Library Tanda Tangan Resmi -->
-    <script src="https://jsdelivr.net"></script>
     <style>
-        body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 15px; }
+        body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 15px; -webkit-user-select: none; user-select: none; }
         .container { max-width: 600px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin: auto; }
         h2 { text-align: center; color: #333; font-size: 1.2rem; line-height: 1.4; margin-top: 5px; }
         label { font-weight: bold; display: block; margin-top: 15px; margin-bottom: 5px; color: #555; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
         
-        /* PERBAIKAN: Memaksa area tanda tangan memiliki ukuran tetap dan mematikan scroll layar saat digores */
-        .canvas-container { border: 2px dashed #999; background: #f9f9f9; border-radius: 4px; position: relative; margin-top: 5px; height: 150px; width: 100%; box-sizing: border-box; }
-        canvas { width: 100% !important; height: 150px !important; display: block; touch-action: none; cursor: crosshair; }
+        /* Box Tanda Tangan Fix Tanpa Plugin Eksternal */
+        .canvas-container { border: 2px dashed #999; background: #ffffff; border-radius: 4px; position: relative; margin-top: 5px; height: 150px; width: 100%; touch-action: none; }
+        canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
         
         .clear-btn { background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-top: 5px; float: right; font-size: 0.8rem; font-weight: bold; }
         button[type="submit"] { width: 100%; background: #2ecc71; color: white; border: none; padding: 14px; font-size: 1.1rem; border-radius: 4px; cursor: pointer; margin-top: 25px; font-weight: bold; }
@@ -67,14 +65,14 @@
         <label>Tanda Tangan Petugas</label>
         <div class="canvas-container">
             <canvas id="canvasPetugas"></canvas>
-            <button type="button" class="clear-btn" id="clearPetugasBtn">Hapus</button>
+            <button type="button" class="clear-btn" id="clearPetugas">Hapus</button>
         </div>
         <div style="clear: both;"></div>
 
         <label>Tanda Tangan Tenant</label>
         <div class="canvas-container">
             <canvas id="canvasTenant"></canvas>
-            <button type="button" class="clear-btn" id="clearTenantBtn">Hapus</button>
+            <button type="button" class="clear-btn" id="clearTenant">Hapus</button>
         </div>
         <div style="clear: both;"></div>
 
@@ -83,36 +81,54 @@
 </div>
 
 <script>
-    // Link Jembatan Google Sheets Anda
     const WEB_APP_URL = "https://google.com";
 
-    const canvasP = document.getElementById('canvasPetugas');
-    const canvasT = document.getElementById('canvasTenant');
-    
-    // Inisialisasi Signature Pad Resmi
-    const padPetugas = new SignaturePad(canvasP, { backgroundColor: 'rgb(249, 249, 249)' });
-    const padTenant = new SignaturePad(canvasT, { backgroundColor: 'rgb(249, 249, 249)' });
+    // Setup Sistem Gambar Tanda Tangan Manual (Anti-Macet)
+    function setupSignature(canvasId, clearId) {
+        const canvas = document.getElementById(canvasId);
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
 
-    // PERBAIKAN: Fungsi penyesuaian resolusi tanda tangan agar tidak macet / freeze
-    function resizeCanvas() {
-        [canvasP, canvasT].forEach(canvas => {
-            const rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width;
+        function resize() {
+            canvas.width = canvas.parentElement.clientWidth;
             canvas.height = 150;
-            canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#000000';
+        }
+        window.addEventListener('resize', resize);
+        setTimeout(resize, 300);
+
+        // Fungsi Deteksi Koordinat Sentuhan
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        function startDraw(e) { drawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); e.preventDefault(); }
+        function draw(e) { if (!drawing) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); e.preventDefault(); }
+        function stopDraw() { drawing = false; }
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', stopDraw);
+
+        canvas.addEventListener('touchstart', startDraw, {passive: false});
+        canvas.addEventListener('touchmove', draw, {passive: false});
+        window.addEventListener('touchend', stopDraw);
+
+        document.getElementById(clearId).addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         });
-        padPetugas.clear(); 
-        padTenant.clear();
+
+        return canvas;
     }
-    
-    window.addEventListener("resize", resizeCanvas);
-    window.addEventListener("DOMContentLoaded", resizeCanvas);
 
-    // Tombol Hapus Tanda Tangan
-    document.getElementById('clearPetugasBtn').addEventListener('click', function() { padPetugas.clear(); });
-    document.getElementById('clearTenantBtn').addEventListener('click', function() { padTenant.clear(); });
+    const canvasP = setupSignature('canvasPetugas', 'clearPetugas');
+    const canvasT = setupSignature('canvasTenant', 'clearTenant');
 
-    // Fungsi konversi file foto ke string teks (Base64)
     function fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -122,62 +138,23 @@
         });
     }
 
-    // Prosedur Kirim Data ke Google Sheet
-    async function sendDataToGoogle(data) {
+    async function submitForm(formData) {
+        // Menggunakan fetch standar untuk mengirim data ke Google Sheets
         return fetch(WEB_APP_URL, {
             method: "POST",
             mode: "no-cors",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
+            body: JSON.stringify(formData)
         });
     }
 
-    // Sinkronisasi Offline Otomatis
-    async function syncOfflineData() {
-        let offlineData = JSON.parse(localStorage.getItem("offline_utility_data")) || [];
-        if (offlineData.length === 0) {
-            document.getElementById("syncStatus").innerText = "";
-            return;
-        }
-        
-        if (navigator.onLine) {
-            document.getElementById("syncStatus").innerText = `Mengunggah ${offlineData.length} data tertunda...`;
-            for (let i = 0; i < offlineData.length; i++) {
-                try {
-                    await sendDataToGoogle(offlineData[i]);
-                    offlineData.splice(i, 1);
-                    i--;
-                    localStorage.setItem("offline_utility_data", JSON.stringify(offlineData));
-                } catch (e) {
-                    console.error(e);
-                    break;
-                }
-            }
-            if (offlineData.length === 0) {
-                document.getElementById("syncStatus").innerText = "Semua data tertunda sukses terunggah!";
-                setTimeout(() => document.getElementById("syncStatus").innerText = "", 3000);
-            }
-        } else {
-            document.getElementById("syncStatus").innerText = `Ada ${offlineData.length} data tersimpan lokal (Menunggu Sinyal)`;
-        }
-    }
-
-    window.addEventListener('online', syncOfflineData);
-    setInterval(syncOfflineData, 15000);
-
-    // Event kirim formulir
     document.getElementById("utilityForm").addEventListener("submit", async function(e) {
         e.preventDefault();
-
-        if (padPetugas.isEmpty() || padTenant.isEmpty()) {
-            alert("Kedua belah pihak wajib mengisi tanda tangan!");
-            return;
-        }
 
         const fileInput = document.getElementById("fotoMeter").files;
         let fotoBase64 = "";
         if (fileInput.length > 0) {
-            fotoBase64 = await fileToBase64(fileInput);
+            fotoBase64 = await fileToBase64(fileInput[0]);
         }
 
         const formData = {
@@ -189,31 +166,21 @@
             meterReading: document.getElementById("meterReading").value,
             petugasTeknisi: document.getElementById("petugasTeknisi").value,
             fotoMeter: fotoBase64,
-            ttdPetugas: padPetugas.toDataURL(),
-            ttdTenant: padTenant.toDataURL()
+            ttdPetugas: canvasP.toDataURL(),
+            ttdTenant: canvasT.toDataURL()
         };
 
-        if (!navigator.onLine) {
-            let offlineData = JSON.parse(localStorage.getItem("offline_utility_data")) || [];
-            offlineData.push(formData);
-            localStorage.setItem("offline_utility_data", JSON.stringify(offlineData));
-            alert("Koneksi offline! Data Anda disimpan aman di memori HP dan otomatis terupload saat internet kembali stabil.");
-            document.getElementById("utilityForm").reset();
-            padPetugas.clear(); padTenant.clear();
-            syncOfflineData();
-            return;
-        }
-
         try {
-            await sendDataToGoogle(formData);
-            alert("Data sukses terkirim ke Master Data!");
+            document.getElementById("syncStatus").innerText = "Sedang mengirim data, mohon tunggu...";
+            await submitForm(formData);
+            alert("Data BERHASIL terkirim ke Master Data Spreadsheet!");
             document.getElementById("utilityForm").reset();
-            padPetugas.clear(); padTenant.clear();
+            document.getElementById("clearPetugas").click();
+            document.getElementById("clearTenant").click();
+            document.getElementById("syncStatus").innerText = "";
         } catch (error) {
-            let offlineData = JSON.parse(localStorage.getItem("offline_utility_data")) || [];
-            offlineData.push(formData);
-            localStorage.setItem("offline_utility_data", JSON.stringify(offlineData));
-            syncOfflineData();
+            alert("Terjadi gangguan koneksi. Data gagal terkirim.");
+            document.getElementById("syncStatus").innerText = "";
         }
     });
 </script>
