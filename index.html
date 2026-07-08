@@ -31,7 +31,7 @@
 <div class="container">
     <h2>PENCATATAN UTILITAS LISTRIK, AIR DAN GAS<br>MALL 23 SEMARANG</h2>
     
-    <!-- Kotak Indikator Status Pengiriman -->
+    <!-- Kotak Indikator Status Pengiriman & Sinkronisasi Otomatis -->
     <div id="statusBox" class="status-box"></div>
 
     <form id="utilityForm">
@@ -89,8 +89,8 @@
 </div>
 
 <script>
-    // Konfigurasi Link Sukses Terintegrasi Otomatis
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw2hnoidpCwTnhbbQASvCOsBX40W3bwG5fD3aUdGBnNrgu8BeWLNm0_aj_cTCoycA_8tw/exec";
+    // Konfigurasi Link Jembatan Aktif & Token API ImgBB Terpasang Kuat
+    const WEB_APP_URL = "https://google.com";
     const IMGBB_API_KEY = "149f5366346fb63664acd198bf12b408";
 
     // Mesin Penggerak Kanvas Menggunakan Deteksi Sentuh Native OS HP
@@ -162,17 +162,17 @@
     const padPetugas = createSignatureEngine('canvasPetugas', 'clearPetugas');
     const padTenant = createSignatureEngine('canvasTenant', 'clearTenant');
 
-    // Pengunggah Berkas Gambar Kilat ke Cloud Hosting ImgBB
+    // Pengunggah Gambar Cloud Hosting ImgBB
     async function uploadToImgBB(base64Data) {
         const cleanBase64 = base64Data.split(',');
         const formData = new FormData();
         formData.append("key", IMGBB_API_KEY);
-        formData.append("image", cleanBase64[1]);
+        formData.append("image", cleanBase64[1] || cleanBase64[0]);
 
         const response = await fetch("https://imgbb.com", { method: "POST", body: formData });
         const result = await response.json();
         if (result.success) return result.data.url;
-        throw new Error("Gagal mengunggah berkas gambar.");
+        throw new Error("Gagal mengonversi berkas gambar.");
     }
 
     // Kompresor Ukuran Gambar Otomatis (Memotong Ukuran Menjadi < 200KB Demi Kecepatan < 10 Detik)
@@ -196,33 +196,31 @@
         });
     }
 
-    // Penanganan Pengiriman Seluruh Form Berurutan
-    document.getElementById("utilityForm").addEventListener("submit", async function(e) {
-        e.preventDefault();
-        const submitBtn = document.getElementById("submitBtn");
-        const statusBox = document.getElementById("statusBox");
+    // KIRIM DATA UTAMA KE GOOGLE SCRIPT
+    async function postDataToGoogle(formData) {
+        return fetch(WEB_APP_URL, { 
+            method: "POST", 
+            mode: "no-cors", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify(formData) 
+        });
+    }
 
-        if (padPetugas.isEmpty() || padTenant.isEmpty()) {
-            alert("Kolom wajib diisi berurutan! Tanda tangan Petugas dan Tenant tidak boleh kosong.");
-            return;
-        }
+    // OTOMATISASI ANTREAN OFFLINE (Penyelamat Saat Koneksi Buruk)
+    async function executeOfflineSync() {
+        let queue = JSON.parse(localStorage.getItem("offline_utility_reports")) || [];
+        if (queue.length === 0) return;
 
-        const fileInput = document.getElementById("fotoMeter").files;
-        if (fileInput.length === 0) {
-            alert("Foto meteran wajib dilampirkan!");
-            return;
-        }
+        if (navigator.onLine) {
+            const statusBox = document.getElementById("statusBox");
+            statusBox.className = "status-box loading";
+            statusBox.style.display = "block";
+            statusBox.innerText = `🔄 Mendeteksi Sinyal Pulih! Mengunggah otomatis ${queue.length} laporan tertunda...`;
 
-        submitBtn.disabled = true;
-        statusBox.className = "status-box loading";
-        statusBox.style.display = "block";
-        statusBox.innerText = "⏳ Sedang memproses dokumen & mengompres gambar...";
-
-        try {
-            const compressedPhoto = await compressImage(fileInput[0]);
-            
-            statusBox.innerText = "📸 Mengonversi foto menjadi tautan link...";
-            const urlFoto = await uploadToImgBB(compressedPhoto);
-
-            statusBox.innerText = "✍️ Mengonversi tanda tangan digital...";
-            const urlTtdP = await uploadToImgBB(padPetugas.getDataURL());
+            for (let i = 0; i < queue.length; i++) {
+                try {
+                    await postDataToGoogle(queue[i]);
+                    queue.splice(i, 1);
+                    i--;
+                    localStorage.setItem("offline_utility_reports", JSON.stringify(queue));
+                } catch (err) {
